@@ -1,6 +1,23 @@
+import {IncomingMessage} from 'http';
 import * as fs from 'fs';
+import * as https from 'https';
 import * as path from 'path';
 import * as core from '@actions/core';
+
+/**
+ * Function to read environment variable and return a string value.
+ *
+ * @param property
+ */
+export async function readEnv(property: string): Promise<string> {
+  const value = process.env[property];
+  switch (value) {
+    case undefined:
+      return '';
+    default:
+      return value;
+  }
+}
 
 /**
  * Function to get inputs from both with and env annotations.
@@ -12,13 +29,56 @@ export async function getInput(
   name: string,
   mandatory: boolean
 ): Promise<string> {
-  const input = process.env[name];
-  switch (input) {
-    case '':
-    case undefined:
-      return core.getInput(name, {required: mandatory});
-    default:
+  const input = core.getInput(name);
+  const env_input = await readEnv(name);
+  switch (true) {
+    case input != '':
       return input;
+    case input == '' && env_input != '':
+      return env_input;
+    case input == '' && env_input == '' && mandatory:
+      throw new Error(`Input required and not supplied: ${name}`);
+    default:
+      return '';
+  }
+}
+
+/**
+ * Function to fetch an URL
+ *
+ * @param url
+ */
+export async function fetch(url: string): Promise<string> {
+  const fetch_promise: Promise<string> = new Promise(resolve => {
+    const req = https.get(url, (res: IncomingMessage) => {
+      res.setEncoding('utf8');
+      let body = '';
+      res.on('data', chunk => (body += chunk));
+      res.on('end', () => resolve(body));
+    });
+    req.end();
+  });
+  return await fetch_promise;
+}
+
+/**
+ * Function to parse PHP version.
+ *
+ * @param version
+ */
+export async function parseVersion(version: string): Promise<string> {
+  const manifest =
+    'https://raw.githubusercontent.com/shivammathur/setup-php/develop/src/configs/php-versions.json';
+  switch (true) {
+    case /^(latest|\d+\.x)$/.test(version):
+      return JSON.parse(await fetch(manifest))[version];
+    default:
+      switch (true) {
+        case version.length > 1:
+          return version.slice(0, 3);
+        default:
+          return version + '.0';
+      }
   }
 }
 
@@ -187,11 +247,13 @@ export async function extensionArray(
       return extension_csv
         .split(',')
         .map(function (extension: string) {
+          if (/.+-.+\/.+@.+/.test(extension)) {
+            return extension;
+          }
           return extension
             .trim()
             .toLowerCase()
-            .replace('php-', '')
-            .replace('php_', '');
+            .replace(/^php[-_]/, '');
         })
         .filter(Boolean);
   }
@@ -210,9 +272,12 @@ export async function CSVArray(values_csv: string): Promise<Array<string>> {
       return [];
     default:
       return values_csv
-        .split(',')
-        .map(function (value: string) {
-          return value.trim();
+        .split(/,(?=(?:(?:[^"']*["']){2})*[^"']*$)/)
+        .map(function (value) {
+          return value
+            .trim()
+            .replace(/^["']|["']$|(?<==)["']/g, '')
+            .replace(/=(((?!E_).)*[?{}|&~![()^]+((?!E_).)+)/, "='$1'");
         })
         .filter(Boolean);
   }
@@ -224,18 +289,11 @@ export async function CSVArray(values_csv: string): Promise<Array<string>> {
  * @param extension
  */
 export async function getExtensionPrefix(extension: string): Promise<string> {
-  const zend: Array<string> = [
-    'xdebug',
-    'xdebug3',
-    'opcache',
-    'ioncube',
-    'eaccelerator'
-  ];
-  switch (zend.indexOf(extension)) {
+  switch (true) {
     default:
-      return 'zend_extension';
-    case -1:
       return 'extension';
+    case /xdebug([2-3])?$|opcache|ioncube|eaccelerator/.test(extension):
+      return 'zend_extension';
   }
 }
 
@@ -340,6 +398,27 @@ export async function scriptExtension(os_version: string): Promise<string> {
 }
 
 /**
+ * Function to get script tool
+ *
+ * @param os_version
+ */
+export async function scriptTool(os_version: string): Promise<string> {
+  switch (os_version) {
+    case 'win32':
+      return 'pwsh';
+    case 'linux':
+    case 'darwin':
+      return 'bash';
+    default:
+      return await log(
+        'Platform ' + os_version + ' is not supported',
+        os_version,
+        'error'
+      );
+  }
+}
+
+/**
  * Function to get script to add tools with custom support.
  *
  * @param pkg
@@ -353,7 +432,7 @@ export async function customPackage(
   version: string,
   os_version: string
 ): Promise<string> {
-  const pkg_name: string = pkg.replace(/\d+|pdo[_-]/, '');
+  const pkg_name: string = pkg.replace(/\d+|(pdo|pecl)[_-]/, '');
   const script_extension: string = await scriptExtension(os_version);
   const script: string = path.join(
     __dirname,
@@ -361,4 +440,25 @@ export async function customPackage(
   );
   const command: string = await getCommand(os_version, pkg_name);
   return '\n. ' + script + '\n' + command + version;
+}
+
+/**
+ * Function to extension input for installation from source.
+ *
+ * @param extension
+ * @param prefix
+ */
+export async function parseExtensionSource(
+  extension: string,
+  prefix: string
+): Promise<string> {
+  // Groups: extension, domain url, org, repo, release
+  const regex = /(\w+)-(.+:\/\/.+(?:[.:].+)+\/)?([\w.-]+)\/([\w.-]+)@(.+)/;
+  const matches = regex.exec(extension) as RegExpExecArray;
+  matches[2] = matches[2] ? matches[2].slice(0, -1) : 'https://github.com';
+  return await joins(
+    '\nadd_extension_from_source',
+    ...matches.splice(1, matches.length),
+    prefix
+  );
 }

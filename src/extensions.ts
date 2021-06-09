@@ -5,12 +5,10 @@ import * as utils from './utils';
  *
  * @param extension_csv
  * @param version
- * @param pipe
  */
 export async function addExtensionDarwin(
   extension_csv: string,
-  version: string,
-  pipe: string
+  version: string
 ): Promise<string> {
   const extensions: Array<string> = await utils.extensionArray(extension_csv);
   let add_script = '\n';
@@ -19,24 +17,28 @@ export async function addExtensionDarwin(
     const version_extension: string = version + extension;
     const [ext_name, ext_version]: string[] = extension.split('-');
     const ext_prefix = await utils.getExtensionPrefix(ext_name);
-    const command_prefix = 'pecl_install ';
-    let command = '';
+
     switch (true) {
       // match :extension
       case /^:/.test(ext_name):
         remove_script += '\nremove_extension ' + ext_name.slice(1);
         return;
-      // match 5.3blackfire...5.6blackfire, 7.0blackfire...7.4blackfire
-      // match 5.3blackfire-1.31.0...5.6blackfire-1.31.0, 7.0blackfire-1.31.0...7.4blackfire-1.31.0
-      // match pdo_oci and oci8
-      // match 5.3ioncube...7.4ioncube, 7.0ioncube...7.4ioncube
+      // match extensions for compiling from source
+      case /.+-.+\/.+@.+/.test(extension):
+        add_script += await utils.parseExtensionSource(extension, ext_prefix);
+        return;
+      // match 5.3blackfire...8.0blackfire
+      // match 5.3blackfire-(semver)...8.0blackfire-(semver)
+      // match couchbase, geos, pdo_oci, oci8, http, pecl_http
+      // match 5.3ioncube...7.4ioncube
       // match 7.0phalcon3...7.3phalcon3 and 7.2phalcon4...7.4phalcon4
-      case /^(5\.[3-6]|7\.[0-4])blackfire(-\d+\.\d+\.\d+)?$/.test(
+      case /^(5\.[3-6]|7\.[0-4]|8\.0)blackfire(-\d+\.\d+\.\d+)?$/.test(
         version_extension
       ):
-      case /^pdo_oci$|^oci8$/.test(extension):
-      case /^5\.[3-6]ioncube$|^7\.[0-4]ioncube$/.test(version_extension):
-      case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$/.test(version_extension):
+      case /^couchbase$|^geos$|^pdo_oci$|^oci8$|^(pecl_)?http|^pdo_firebird$/.test(
+        extension
+      ):
+      case /^(5\.[3-6]|7\.[0-4])ioncube$/.test(version_extension):
         add_script += await utils.customPackage(
           ext_name,
           'ext',
@@ -45,7 +47,7 @@ export async function addExtensionDarwin(
         );
         return;
       // match pre-release versions. For example - xdebug-beta
-      case /.*-(beta|alpha|devel|snapshot)/.test(version_extension):
+      case /.+-(stable|beta|alpha|devel|snapshot|rc|preview)/.test(extension):
         add_script += await utils.joins(
           '\nadd_unstable_extension',
           ext_name,
@@ -54,7 +56,7 @@ export async function addExtensionDarwin(
         );
         return;
       // match semver
-      case /.*-\d+\.\d+\.\d+.*/.test(version_extension):
+      case /.+-\d+\.\d+\.\d+.*/.test(extension):
         add_script += await utils.joins(
           '\nadd_pecl_extension',
           ext_name,
@@ -66,40 +68,29 @@ export async function addExtensionDarwin(
       case /(5\.[3-6]|7\.0)pcov/.test(version_extension):
         add_script += await utils.getUnsupportedLog('pcov', version, 'darwin');
         return;
-      // match 5.6xdebug to 8.0xdebug, 5.6swoole to 8.0swoole
-      // match 5.6grpc to 7.4grpc, 5.6protobuf to 7.4protobuf
-      // match 7.1pcov to 8.0pcov
-      case /(5\.6|7\.[0-4]|8\.[0-9])xdebug/.test(version_extension):
-      case /(5\.6|7\.[0-4])(grpc|protobuf|swoole)/.test(version_extension):
-      case /(7\.[1-4]|8\.[0-9])pcov/.test(version_extension):
-        command = 'add_brew_extension ' + ext_name;
-        break;
-      // match 5.6redis
-      case /5\.6redis/.test(version_extension):
-        command = command_prefix + 'redis-2.2.8';
-        break;
-      // match imagick
-      case /^imagick$/.test(extension):
-        command = await utils.joins(
-          'brew install pkg-config imagemagick' + pipe,
-          '&& ' + command_prefix + 'imagick' + pipe
+      // match 5.6 and newer - amqp, apcu, grpc, igbinary, imagick, imap, msgpack, protobuf, raphf, redis, swoole, xdebug, xdebug2, zmq
+      // match 7.1 and newer - pcov
+      // match 5.6 to 7.4 - propro
+      case /(?<!5\.[3-5])(amqp|apcu|grpc|igbinary|imagick|imap|memcache|memcached|msgpack|protobuf|psr|raphf|redis|swoole|xdebug|xdebug2|zmq)/.test(
+        version_extension
+      ):
+      case /(5\.6|7\.[0-4])propro/.test(version_extension):
+      case /(?<!5\.[3-6]|7\.0)pcov/.test(version_extension):
+      case /(5\.6|7\.[0-3])phalcon3|7\.[2-4]phalcon4/.test(version_extension):
+        add_script += await utils.joins(
+          '\nadd_brew_extension',
+          ext_name,
+          ext_prefix
         );
-        break;
+        return;
       // match sqlite
       case /^sqlite$/.test(extension):
         extension = 'sqlite3';
-        command = command_prefix + extension;
         break;
       default:
-        command = command_prefix + extension;
         break;
     }
-    add_script += await utils.joins(
-      '\nadd_extension',
-      extension,
-      '"' + command + '"',
-      ext_prefix
-    );
+    add_script += await utils.joins('\nadd_extension', extension, ext_prefix);
   });
   return add_script + remove_script;
 }
@@ -126,17 +117,19 @@ export async function addExtensionWindows(
       case /^:/.test(ext_name):
         remove_script += '\nRemove-Extension ' + ext_name.slice(1);
         break;
-      // match 5.3blackfire...5.6blackfire, 7.0blackfire...7.4blackfire
-      // match 5.3blackfire-1.31.0...5.6blackfire-1.31.0, 7.0blackfire-1.31.0...7.4blackfire-1.31.0
+      // match 5.3blackfire...8.0blackfire
+      // match 5.3blackfire-(semver)...8.0blackfire-(semver)
       // match pdo_oci and oci8
-      // match 5.3ioncube...7.4ioncube, 7.0ioncube...7.4ioncube
+      // match 5.3ioncube...7.4ioncube
       // match 7.0phalcon3...7.3phalcon3 and 7.2phalcon4...7.4phalcon4
-      case /^(5\.[3-6]|7\.[0-4])blackfire(-\d+\.\d+\.\d+)?$/.test(
+      // match 7.1pecl_http...8.0pecl_http and 7.1http...8.0http
+      case /^(5\.[3-6]|7\.[0-4]|8\.0)blackfire(-\d+\.\d+\.\d+)?$/.test(
         version_extension
       ):
-      case /^pdo_oci$|^oci8$/.test(extension):
-      case /^5\.[3-6]ioncube$|^7\.[0-4]ioncube$/.test(version_extension):
+      case /^pdo_oci$|^oci8$|^pdo_firebird$/.test(extension):
+      case /^(5\.[3-6]|7\.[0-4])ioncube$/.test(version_extension):
       case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$/.test(version_extension):
+      case /^(7\.[1-4]|8\.0)(pecl_)?http/.test(version_extension):
         add_script += await utils.customPackage(
           ext_name,
           'ext',
@@ -145,15 +138,23 @@ export async function addExtensionWindows(
         );
         return;
       // match pre-release versions. For example - xdebug-beta
-      case /.*-(beta|alpha|devel|snapshot)/.test(version_extension):
+      case /.+-(stable|beta|alpha|devel|snapshot)/.test(extension):
         add_script += await utils.joins(
           '\nAdd-Extension',
           ext_name,
-          ext_version
+          ext_version.replace('stable', '')
+        );
+        break;
+      // match extensions for compiling from source
+      case /.+-.+\/.+@.+/.test(extension):
+        add_script += await utils.getUnsupportedLog(
+          extension,
+          version,
+          'win32'
         );
         break;
       // match semver without state
-      case /.*-\d+\.\d+\.\d+$/.test(version_extension):
+      case /.+-\d+\.\d+\.\d+$/.test(extension):
         add_script += await utils.joins(
           '\nAdd-Extension',
           ext_name,
@@ -162,34 +163,34 @@ export async function addExtensionWindows(
         );
         break;
       // match semver with state
-      case /.*-(\d+\.\d+\.\d)(beta|alpha|devel|snapshot)\d*/.test(
-        version_extension
-      ):
-        matches = /.*-(\d+\.\d+\.\d)(beta|alpha|devel|snapshot)\d*/.exec(
+      case /.+-\d+\.\d+\.\d+[a-zA-Z]+\d*/.test(extension):
+        matches = /.+-(\d+\.\d+\.\d+)([a-zA-Z]+)\d*/.exec(
           version_extension
         ) as RegExpExecArray;
         add_script += await utils.joins(
           '\nAdd-Extension',
           ext_name,
-          matches[2],
+          matches[2].replace('preview', 'devel'),
           matches[1]
         );
+        break;
+      // match 7.2xdebug2 to 7.4xdebug2
+      case /7\.[2-4]xdebug2/.test(version_extension):
+        add_script += '\nAdd-Extension xdebug stable 2.9.8';
         break;
       // match 5.3pcov to 7.0pcov
       case /(5\.[3-6]|7\.0)pcov/.test(version_extension):
         add_script += await utils.getUnsupportedLog('pcov', version, 'win32');
         break;
-      // match 5.3mysql..5.6mysql
-      // match 5.3mysqli..5.6mysqli
-      // match 5.3mysqlnd..5.6mysqlnd
-      case /^5\.\d(mysql|mysqli|mysqlnd)$/.test(version_extension):
+      // match 5.3 to 5.6 - mysql, mysqli, mysqlnd
+      case /^5\.[3-6](?<!pdo_)(mysql|mysqli|mysqlnd)$/.test(version_extension):
         add_script +=
           '\nAdd-Extension mysql\nAdd-Extension mysqli\nAdd-Extension mysqlnd';
         break;
-      // match 7.0mysql..8.0mysql
-      // match 7.0mysqli..8.0mysqli
-      // match 7.0mysqlnd..8.0mysqlnd
-      case /[7-8]\.\d(mysql|mysqli|mysqlnd)$/.test(version_extension):
+      // match 7.0 and newer mysql, mysqli and mysqlnd
+      case /(?<!5\.[3-6])(?<!pdo_)(mysql|mysqli|mysqlnd)$/.test(
+        version_extension
+      ):
         add_script += '\nAdd-Extension mysqli\nAdd-Extension mysqlnd';
         break;
       // match sqlite
@@ -210,12 +211,10 @@ export async function addExtensionWindows(
  *
  * @param extension_csv
  * @param version
- * @param pipe
  */
 export async function addExtensionLinux(
   extension_csv: string,
-  version: string,
-  pipe: string
+  version: string
 ): Promise<string> {
   const extensions: Array<string> = await utils.extensionArray(extension_csv);
   let add_script = '\n';
@@ -224,30 +223,34 @@ export async function addExtensionLinux(
     const version_extension: string = version + extension;
     const [ext_name, ext_version]: string[] = extension.split('-');
     const ext_prefix = await utils.getExtensionPrefix(ext_name);
-    const command_prefix = 'sudo $debconf_fix apt-get install -y php';
-    let command = '';
+
     switch (true) {
       // Match :extension
       case /^:/.test(ext_name):
         remove_script += '\nremove_extension ' + ext_name.slice(1);
         return;
-      // match 5.3blackfire...5.6blackfire, 7.0blackfire...7.4blackfire
-      // match 5.3blackfire-1.31.0...5.6blackfire-1.31.0, 7.0blackfire-1.31.0...7.4blackfire-1.31.0
+      // match extensions for compiling from source
+      case /.+-.+\/.+@.+/.test(extension):
+        add_script += await utils.parseExtensionSource(extension, ext_prefix);
+        return;
+      // match 5.3blackfire...8.0blackfire
+      // match 5.3blackfire-(semver)...8.0blackfire-(semver)
       // match 5.3pdo_cubrid...7.2php_cubrid, 5.3cubrid...7.4cubrid
-      // match pdo_oci and oci8
-      // match 5.3ioncube...7.4ioncube, 7.0ioncube...7.4ioncube
+      // match couchbase, geos, pdo_oci, oci8, http, pecl_http
+      // match 5.3ioncube...7.4ioncube
       // match 7.0phalcon3...7.3phalcon3 and 7.2phalcon4...7.4phalcon4
-      // match 5.6gearman..7.4gearman
-      case /^(5\.[3-6]|7\.[0-4])blackfire(-\d+\.\d+\.\d+)?$/.test(
+      case /^(5\.[3-6]|7\.[0-4]|8\.0)blackfire(-\d+\.\d+\.\d+)?$/.test(
         version_extension
       ):
       case /^((5\.[3-6])|(7\.[0-2]))pdo_cubrid$|^((5\.[3-6])|(7\.[0-4]))cubrid$/.test(
         version_extension
       ):
-      case /^pdo_oci$|^oci8$/.test(extension):
-      case /^5\.[3-6]ioncube$|^7\.[0-4]ioncube$/.test(version_extension):
+      case /^couchbase$|^gearman$|^geos$|^pdo_oci$|^oci8$|^(pecl_)?http|^pdo_firebird$/.test(
+        extension
+      ):
+      case /(?<!5\.[3-5])intl-[\d]+\.[\d]+$/.test(version_extension):
+      case /^(5\.[3-6]|7\.[0-4])ioncube$/.test(version_extension):
       case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$/.test(version_extension):
-      case /^((5\.6)|(7\.[0-4]))gearman$/.test(version_extension):
         add_script += await utils.customPackage(
           ext_name,
           'ext',
@@ -256,7 +259,7 @@ export async function addExtensionLinux(
         );
         return;
       // match pre-release versions. For example - xdebug-beta
-      case /.*-(beta|alpha|devel|snapshot)/.test(version_extension):
+      case /.+-(stable|beta|alpha|devel|snapshot|rc|preview)/.test(extension):
         add_script += await utils.joins(
           '\nadd_unstable_extension',
           ext_name,
@@ -265,7 +268,7 @@ export async function addExtensionLinux(
         );
         return;
       // match semver versions
-      case /.*-\d+\.\d+\.\d+.*/.test(version_extension):
+      case /.+-\d+\.\d+\.\d+.*/.test(extension):
         add_script += await utils.joins(
           '\nadd_pecl_extension',
           ext_name,
@@ -277,40 +280,28 @@ export async function addExtensionLinux(
       case /(5\.[3-6]|7\.0)pcov/.test(version_extension):
         add_script += await utils.getUnsupportedLog('pcov', version, 'linux');
         return;
-      // match 7.2xdebug3..7.4xdebug3
-      case /^7\.[2-4]xdebug3$/.test(version_extension):
-        add_script +=
-          '\nadd_extension_from_source xdebug xdebug/xdebug master --enable-xdebug zend_extension';
+      // match 7.2xdebug2...7.4xdebug2
+      case /^7\.[2-4]xdebug2$/.test(version_extension):
+        add_script += await utils.joins(
+          '\nadd_pecl_extension',
+          'xdebug',
+          '2.9.8',
+          ext_prefix
+        );
         return;
-      // match 8.0xdebug3
-      case /^8\.[0-9]xdebug3$/.test(version_extension):
-        extension = 'xdebug';
-        command = command_prefix + version + '-' + extension + pipe;
-        break;
       // match pdo extensions
-      case /.*pdo[_-].*/.test(version_extension):
+      case /^pdo[_-].+/.test(extension):
         extension = extension.replace(/pdo[_-]|3/, '');
         add_script += '\nadd_pdo_extension ' + extension;
         return;
-      // match ast and uopz
-      case /^(ast|uopz)$/.test(extension):
-        command = command_prefix + '-' + extension + pipe;
-        break;
       // match sqlite
       case /^sqlite$/.test(extension):
         extension = 'sqlite3';
-        command = command_prefix + version + '-' + extension + pipe;
         break;
       default:
-        command = command_prefix + version + '-' + extension + pipe;
         break;
     }
-    add_script += await utils.joins(
-      '\nadd_extension',
-      extension,
-      '"' + command + '"',
-      ext_prefix
-    );
+    add_script += await utils.joins('\nadd_extension', extension, ext_prefix);
   });
   return add_script + remove_script;
 }
@@ -329,15 +320,15 @@ export async function addExtension(
   os_version: string,
   no_step = false
 ): Promise<string> {
-  const pipe: string = await utils.suppressOutput(os_version);
+  const log: string = await utils.stepLog('Setup Extensions', os_version);
   let script = '\n';
   switch (no_step) {
     case true:
-      script += (await utils.stepLog('Setup Extensions', os_version)) + pipe;
+      script += log + (await utils.suppressOutput(os_version));
       break;
     case false:
     default:
-      script += await utils.stepLog('Setup Extensions', os_version);
+      script += log;
       break;
   }
 
@@ -345,9 +336,9 @@ export async function addExtension(
     case 'win32':
       return script + (await addExtensionWindows(extension_csv, version));
     case 'darwin':
-      return script + (await addExtensionDarwin(extension_csv, version, pipe));
+      return script + (await addExtensionDarwin(extension_csv, version));
     case 'linux':
-      return script + (await addExtensionLinux(extension_csv, version, pipe));
+      return script + (await addExtensionLinux(extension_csv, version));
     default:
       return await utils.log(
         'Platform ' + os_version + ' is not supported',

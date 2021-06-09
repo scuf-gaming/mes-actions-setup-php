@@ -29,22 +29,23 @@ jobs:
           extensions: mbstring, xml, ctype, iconv, intl, pdo_sqlite, pgsql
           coverage: xdebug #optional
       - name: Get composer cache directory
-        id: composercache
+        id: composer-cache
         run: echo "::set-output name=dir::$(composer config cache-files-dir)"
       - name: Cache composer dependencies
         uses: actions/cache@v2
         with:
-          path: ${{ steps.composercache.outputs.dir }}
+          path: ${{ steps.composer-cache.outputs.dir }}
           # Use composer.json for key, if composer.lock is not committed.
           # key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
           restore-keys: ${{ runner.os }}-composer-
       - name: Install Composer dependencies
         run: |
+          composer require --dev symfony/orm-pack symfony/phpunit-bridge
           composer install --no-progress --prefer-dist --optimize-autoloader
+          php bin/phpunit install
       - name: Run Migration
         run: |
-          composer require symfony/orm-pack
           php bin/console doctrine:schema:update --force || echo "No migrations found or schema update failed"
           php bin/console doctrine:migrations:migrate || echo "No migrations found or migration failed"
         env:

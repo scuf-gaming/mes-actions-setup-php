@@ -28,10 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Setup Node.js 12.x
+      - name: Setup Node.js 15.x
         uses: actions/setup-node@v1
         with:
-          node-version: 12.x
+          node-version: 15.x
 
       - name: Install dependencies
         run: npm install
@@ -48,4 +48,4 @@ jobs:
       - name: Send Coverage
         continue-on-error: true
         timeout-minutes: 1
-        run: curl -s https://codecov.io/bash | bash -s -- -t ${{secrets.CODECOV_TOKEN}} -f coverage/clover.xml -n github-actions-codecov-${{ matrix.operating-system }}
+        run: curl -s https://codecov.io/bash | bash -s -- -t ${{secrets.CODECOV_TOKEN}} -f coverage/lcov.info -n github-actions-codecov-${{ matrix.operating-system }}

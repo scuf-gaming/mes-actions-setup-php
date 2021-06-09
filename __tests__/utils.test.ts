@@ -8,6 +8,10 @@ jest.mock('@actions/core', () => ({
   })
 }));
 
+jest.spyOn(utils, 'fetch').mockImplementation(async (url): Promise<string> => {
+  return `{ "latest": "8.0", "5.x": "5.6", "url": "${url}" }`;
+});
+
 async function cleanup(path: string): Promise<void> {
   fs.unlink(path, error => {
     if (error) {
@@ -17,23 +21,45 @@ async function cleanup(path: string): Promise<void> {
 }
 
 describe('Utils tests', () => {
+  it('checking readEnv', async () => {
+    process.env['test'] = 'setup-php';
+    expect(await utils.readEnv('test')).toBe('setup-php');
+    expect(await utils.readEnv('undefined')).toBe('');
+  });
+
   it('checking getInput', async () => {
     process.env['test'] = 'setup-php';
-    process.env['undefined'] = '';
     expect(await utils.getInput('test', false)).toBe('setup-php');
-    expect(await utils.getInput('undefined', false)).toBe('');
     expect(await utils.getInput('setup-php', false)).toBe('setup-php');
     expect(await utils.getInput('DoesNotExist', false)).toBe('');
+    expect(async () => {
+      await utils.getInput('DoesNotExist', true);
+    }).rejects.toThrow('Input required and not supplied: DoesNotExist');
+  });
+
+  it('checking fetch', async () => {
+    expect(await utils.fetch('test_url')).toBe(
+      '{ "latest": "8.0", "5.x": "5.6", "url": "test_url" }'
+    );
+  });
+
+  it('checking parseVersion', async () => {
+    expect(await utils.parseVersion('latest')).toBe('8.0');
+    expect(await utils.parseVersion('7')).toBe('7.0');
+    expect(await utils.parseVersion('7.4')).toBe('7.4');
+    expect(await utils.parseVersion('5.x')).toBe('5.6');
+    expect(await utils.parseVersion('4.x')).toBe(undefined);
   });
 
   it('checking asyncForEach', async () => {
     const array: Array<string> = ['a', 'b', 'c'];
     let concat = '';
-    await utils.asyncForEach(array, async function (
-      str: string
-    ): Promise<void> {
-      concat += str;
-    });
+    await utils.asyncForEach(
+      array,
+      async function (str: string): Promise<void> {
+        concat += str;
+      }
+    );
     expect(concat).toBe('abc');
   });
 
@@ -70,12 +96,12 @@ describe('Utils tests', () => {
     const runner_dir: string = process.env['RUNNER_TOOL_CACHE'] || '';
     const script_path: string = path.join(runner_dir, 'test.sh');
     await utils.writeScript('test.sh', testString);
-    await fs.readFile(script_path, function (
-      error: Error | null,
-      data: Buffer
-    ) {
-      expect(testString).toBe(data.toString());
-    });
+    await fs.readFile(
+      script_path,
+      function (error: Error | null, data: Buffer) {
+        expect(testString).toBe(data.toString());
+      }
+    );
     await cleanup(script_path);
   });
 
@@ -97,6 +123,20 @@ describe('Utils tests', () => {
       'b=2',
       'c=3'
     ]);
+    expect(await utils.CSVArray('\'a=1,2\', "b=3, 4", c=5, d=~e~')).toEqual([
+      'a=1,2',
+      'b=3, 4',
+      'c=5',
+      "d='~e~'"
+    ]);
+    expect(await utils.CSVArray('a=\'1,2\', b="3, 4", c=5')).toEqual([
+      'a=1,2',
+      'b=3, 4',
+      'c=5'
+    ]);
+    expect(
+      await utils.CSVArray('a=E_ALL, b=E_ALL & ~ E_ALL, c="E_ALL", d=\'E_ALL\'')
+    ).toEqual(['a=E_ALL', 'b=E_ALL & ~ E_ALL', 'c=E_ALL', 'd=E_ALL']);
     expect(await utils.CSVArray('')).toEqual([]);
     expect(await utils.CSVArray(' ')).toEqual([]);
   });
@@ -131,8 +171,8 @@ describe('Utils tests', () => {
     expect(step_log).toEqual('step_log "Test message"');
     step_log = await utils.stepLog(message, 'darwin');
     expect(step_log).toEqual('step_log "Test message"');
-    step_log = await utils.stepLog(message, 'fedora');
-    expect(step_log).toContain('Platform fedora is not supported');
+    step_log = await utils.stepLog(message, 'openbsd');
+    expect(step_log).toContain('Platform openbsd is not supported');
 
     let add_log: string = await utils.addLog(
       'tick',
@@ -145,8 +185,8 @@ describe('Utils tests', () => {
     expect(add_log).toEqual('add_log "tick" "xdebug" "enabled"');
     add_log = await utils.addLog('tick', 'xdebug', 'enabled', 'darwin');
     expect(add_log).toEqual('add_log "tick" "xdebug" "enabled"');
-    add_log = await utils.addLog('tick', 'xdebug', 'enabled', 'fedora');
-    expect(add_log).toContain('Platform fedora is not supported');
+    add_log = await utils.addLog('tick', 'xdebug', 'enabled', 'openbsd');
+    expect(add_log).toContain('Platform openbsd is not supported');
   });
 
   it('checking getExtensionPrefix', async () => {
@@ -163,8 +203,8 @@ describe('Utils tests', () => {
     expect(await utils.suppressOutput('win32')).toEqual(' >$null 2>&1');
     expect(await utils.suppressOutput('linux')).toEqual(' >/dev/null 2>&1');
     expect(await utils.suppressOutput('darwin')).toEqual(' >/dev/null 2>&1');
-    expect(await utils.suppressOutput('fedora')).toContain(
-      'Platform fedora is not supported'
+    expect(await utils.suppressOutput('openbsd')).toContain(
+      'Platform openbsd is not supported'
     );
   });
 
@@ -178,8 +218,8 @@ describe('Utils tests', () => {
     expect(await utils.getCommand('linux', 'tool')).toBe('add_tool ');
     expect(await utils.getCommand('darwin', 'tool')).toBe('add_tool ');
     expect(await utils.getCommand('win32', 'tool')).toBe('Add-Tool ');
-    expect(await utils.getCommand('fedora', 'tool')).toContain(
-      'Platform fedora is not supported'
+    expect(await utils.getCommand('openbsd', 'tool')).toContain(
+      'Platform openbsd is not supported'
     );
   });
 
@@ -191,8 +231,17 @@ describe('Utils tests', () => {
     expect(await utils.scriptExtension('linux')).toBe('.sh');
     expect(await utils.scriptExtension('darwin')).toBe('.sh');
     expect(await utils.scriptExtension('win32')).toBe('.ps1');
-    expect(await utils.scriptExtension('fedora')).toContain(
-      'Platform fedora is not supported'
+    expect(await utils.scriptExtension('openbsd')).toContain(
+      'Platform openbsd is not supported'
+    );
+  });
+
+  it('checking scriptTool', async () => {
+    expect(await utils.scriptTool('linux')).toBe('bash');
+    expect(await utils.scriptTool('darwin')).toBe('bash');
+    expect(await utils.scriptTool('win32')).toBe('pwsh');
+    expect(await utils.scriptTool('openbsd')).toContain(
+      'Platform openbsd is not supported'
     );
   });
 
@@ -207,5 +256,32 @@ describe('Utils tests', () => {
     expect(
       await utils.customPackage('pkg8', 'ext', '1.2.3', 'linux')
     ).toContain(script_path + '\nadd_pkg 1.2.3');
+  });
+
+  it('checking parseExtensionSource', async () => {
+    expect(
+      await utils.parseExtensionSource(
+        'ext-org-name/repo-name@release',
+        'extension'
+      )
+    ).toContain(
+      '\nadd_extension_from_source ext https://github.com org-name repo-name release extension'
+    );
+    expect(
+      await utils.parseExtensionSource(
+        'ext-https://sub.domain.tld/org/repo@release',
+        'extension'
+      )
+    ).toContain(
+      '\nadd_extension_from_source ext https://sub.domain.tld org repo release extension'
+    );
+    expect(
+      await utils.parseExtensionSource(
+        'ext-https://sub.domain.XN--tld/org/repo@release',
+        'extension'
+      )
+    ).toContain(
+      '\nadd_extension_from_source ext https://sub.domain.XN--tld org repo release extension'
+    );
   });
 });

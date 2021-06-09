@@ -12,9 +12,9 @@ describe('Config tests', () => {
 
     win32 = await config.addINIValues(
       'post_max_size=256M, short_open_tag=On, date.timezone=Asia/Kolkata',
-      'fedora'
+      'openbsd'
     );
-    expect(win32).toContain('Platform fedora is not supported');
+    expect(win32).toContain('Platform openbsd is not supported');
   });
 
   it('checking addINIValuesOnLinux', async () => {
@@ -24,14 +24,14 @@ describe('Config tests', () => {
       true
     );
     expect(linux).toContain(
-      'echo "post_max_size=256M\nshort_open_tag=On\ndate.timezone=Asia/Kolkata"'
+      'echo "post_max_size=256M\nshort_open_tag=On\ndate.timezone=Asia/Kolkata" | sudo tee -a "${pecl_file:-${ini_file[@]}}"'
     );
 
     linux = await config.addINIValues(
       'post_max_size=256M, short_open_tag=On, date.timezone=Asia/Kolkata',
-      'fedora'
+      'openbsd'
     );
-    expect(linux).toContain('Platform fedora is not supported');
+    expect(linux).toContain('Platform openbsd is not supported');
   });
 
   it('checking addINIValuesOnDarwin', async () => {
@@ -40,13 +40,13 @@ describe('Config tests', () => {
       'darwin'
     );
     expect(darwin).toContain(
-      'echo "post_max_size=256M\nshort_open_tag=On\ndate.timezone=Asia/Kolkata"'
+      'echo "post_max_size=256M\nshort_open_tag=On\ndate.timezone=Asia/Kolkata" | sudo tee -a "${pecl_file:-${ini_file[@]}}"'
     );
 
     darwin = await config.addINIValues(
       'post_max_size=256M, short_open_tag=On, date.timezone=Asia/Kolkata',
-      'fedora'
+      'openbsd'
     );
-    expect(darwin).toContain('Platform fedora is not supported');
+    expect(darwin).toContain('Platform openbsd is not supported');
   });
 });

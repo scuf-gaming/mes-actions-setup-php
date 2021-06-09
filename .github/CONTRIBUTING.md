@@ -8,7 +8,7 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 
 * Fork the project.
 * Make your bug fix or feature addition.
-* Add tests for it. This is important so we don't break it in a future version unintentionally.
+* Add tests for it, so we don't break it in a future version unintentionally.
 * If editing the scripts, create a demo integration test.
 * Send a pull request to the develop branch with all the details.
 
@@ -17,13 +17,6 @@ Please make sure that you have [set up your user name and email address](https:/
 Due to time constraints, you may not always get a quick response. Please do not take delays personally and feel free to remind.
 
 ## Coding Guidelines
-
-This project comes with `.prettierrc.json` and `eslintrc.json` configuration files. Please run the following commands to format the code before committing it.
-
-```bash
-$ npm run format
-$ npm run lint
-```
 
 ## Using setup-php from a Git checkout
 
@@ -39,6 +32,19 @@ Install setup-php dependencies using [npm](https://www.npmjs.com/):
 
 ```bash
 $ npm install
+```
+
+If you are using `Windows` configure `git` to handle line endings.
+
+```cmd
+git config --local core.autocrlf true
+```
+
+This project comes with `.prettierrc.json` and `eslintrc.json` configuration files. Please run the following commands to fix and verify the code quality.
+
+```bash
+$ npm run format
+$ npm run lint
 ```
 
 ## Running the test suite

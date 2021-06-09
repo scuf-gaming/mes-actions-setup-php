@@ -14,7 +14,7 @@ Function Add-InstantClient() {
     if ($arch -eq 'x86') {
       $suffix = 'nt'
     }
-    Invoke-WebRequest -UseBasicParsing -Uri https://download.oracle.com/otn_software/nt/instantclient/instantclient-basiclite-$suffix.zip -OutFile $php_dir\instantclient.zip
+    Invoke-WebRequest -Uri https://download.oracle.com/otn_software/nt/instantclient/instantclient-basiclite-$suffix.zip -OutFile $php_dir\instantclient.zip
     Expand-Archive -Path $php_dir\instantclient.zip -DestinationPath $php_dir -Force
     Copy-Item $php_dir\instantclient*\* $php_dir
   }
@@ -37,14 +37,16 @@ Function Add-Oci() {
     } else {
       if(-not(Test-Path $ext_dir\php_oci8.dll)) {
         $status = 'Installed and enabled'
-        $ociVersion = '2.2.0'
+        $ociVersion = Get-PeclPackageVersion oci8 -MinimumStability stable -MaximumStability stable | Select-Object -First 1
         if ($version -eq '7.0') {
           $ociVersion = '2.1.8'
         } elseif ($version -lt '7.0') {
           $ociVersion = '2.0.12'
+        } elseif ($version -lt '8.0') {
+          $ociVersion = '2.2.0'
         }
         $ociUrl = Get-PeclArchiveUrl oci8 $ociVersion $installed
-        Invoke-WebRequest -UseBasicParsing -Uri $ociUrl -OutFile $php_dir\oci8.zip
+        Invoke-WebRequest -Uri $ociUrl -OutFile $php_dir\oci8.zip
         Expand-Archive -Path $php_dir\oci8.zip -DestinationPath $ext_dir -Force
 
       }

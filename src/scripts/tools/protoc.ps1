@@ -27,11 +27,11 @@ Function Add-Protoc() {
     $arch_num = '32'
   }
   $url = "https://github.com/protocolbuffers/protobuf/releases/download/$protobuf_tag/protoc-$($protobuf_tag -replace 'v', '')-win$arch_num.zip"
-  Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $bin_dir\protoc.zip >$null 2>&1
+  Invoke-WebRequest -Uri $url -OutFile $bin_dir\protoc.zip >$null 2>&1
   Expand-Archive -Path $bin_dir\protoc.zip -DestinationPath $bin_dir\protoc -Force >$null 2>&1
   Move-Item -Path $bin_dir\protoc\bin\protoc.exe -Destination $bin_dir\protoc.exe
   Add-ToProfile $current_profile 'protoc' "New-Alias protoc $bin_dir\protoc.exe"
-  Add-Log $tick "protoc" "Added"
+  Add-Log $tick "protoc" "Added protoc $($protobuf_tag -replace 'v', '')"
   printf "::group::\033[34;1m%s \033[0m\033[90;1m%s \033[0m\n" "protoc" "Click to read the protoc related license information"
   Write-Output (Invoke-WebRequest https://raw.githubusercontent.com/protocolbuffers/protobuf/master/LICENSE).Content
   Write-Output "::endgroup::"
